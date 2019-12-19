@@ -1,0 +1,263 @@
+# Copyright 2019 Amazon.com, Inc. and its affiliates. All Rights Reserved.
+#
+# Licensed under the Amazon Software License (the 'License').
+# You may not use this file except in compliance with the License.
+# A copy of the License is located at
+#
+#   http://aws.amazon.com/asl/
+#
+# or in the 'license' file accompanying this file. This file is distributed
+# on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
+# permissions and limitations under the License.
+
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Pipeline Template"
+
+Parameters:
+
+  RepositoryName:
+    Type:  String
+  BranchName:
+    Type:  String
+    Default: "master"
+  Setup:
+    Type: String
+    Default: false
+
+
+Conditions: 
+  BranchMaster: !Equals [ !Ref BranchName, "master" ]
+  BranchDevelop: !Equals [ !Ref BranchName, "develop"]
+  Setup: !Equals [ !Ref Setup, true ]
+
+
+Resources:
+
+
+#----------------------------------------------------------------------#
+# Create CodeCommit Repository
+# Condition: Only at Microservice Setup
+#----------------------------------------------------------------------#
+  Repository:
+    Type: AWS::CodeCommit::Repository
+    Condition: Setup
+    Properties: 
+      RepositoryName: !Ref RepositoryName
+      Code: 
+        S3: 
+          Bucket: !Sub '${AWS::AccountId}-templates'
+          Key: seed.zip
+
+
+#----------------------------------------------------------------------#
+# Resource CodePipeline
+#----------------------------------------------------------------------#
+  Pipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: !Join ['-', [!Ref RepositoryName, !Ref BranchName]]
+      RoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodePipelineRole'
+      ArtifactStore:
+        Type: S3
+        Location: !Sub '${AWS::AccountId}-templates'
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: App
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !Ref RepositoryName
+                BranchName: !Ref BranchName
+              OutputArtifacts:
+                - Name: Source 
+              RunOrder: 1
+
+
+
+#----------------------------------------------------------------------#
+# Regardless of branch type, the CI Stage will always be created.
+#----------------------------------------------------------------------#
+        - Name: Continuous-Integration
+          Actions:
+            - Name: CI-Action
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              OutputArtifacts:
+                - Name: CIAction
+              InputArtifacts:
+                - Name: Source 
+              Configuration:
+                ProjectName: !Join ['-', [!Ref 'RepositoryName', 'CIAction' ]]
+              RunOrder: 1
+
+
+
+#----------------------------------------------------------------------#
+# If BranchName=Develop, then create the CD Stage to deploy to Dev
+#----------------------------------------------------------------------#
+        - !If 
+          - BranchDevelop
+          - Name: Deploy-Dev 
+            Actions: 
+            - Name: CDActionDev
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: Source 
+              OutputArtifacts:
+                - Name: CDActionDev
+              Configuration:
+                ProjectName: !Join ['-', [!Ref 'RepositoryName', 'CDActionDev']]
+              RunOrder: 1
+          - !Ref AWS::NoValue 
+
+
+
+#----------------------------------------------------------------------#
+# If BranchName=Master, then create the CD Stage to deploy to Homolog
+#----------------------------------------------------------------------#
+        - !If 
+          - BranchMaster
+          - Name: Deploy-Homolog  
+            Actions: 
+            - Name: CDActionHomolog
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: Source 
+              OutputArtifacts:
+                - Name: CDActionHomolog
+              Configuration:
+                ProjectName: !Join ['-', [!Ref 'RepositoryName', 'CDActionHomolog']]
+              RunOrder: 1
+          - !Ref AWS::NoValue
+
+
+
+#----------------------------------------------------------------------#
+# If BranchName=Master, then create CD Stage to deploy to Prod
+#----------------------------------------------------------------------#
+        - !If 
+          - BranchMaster
+          - Name: Deploy-Prod  
+            Actions: 
+            - Name: CDActionProd
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: "1"
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: Source 
+              OutputArtifacts:
+                - Name: CDActionProd
+              Configuration:
+                ProjectName: !Join ['-', [!Ref 'RepositoryName', 'CDActionProd']]
+              RunOrder: 2
+          - !Ref AWS::NoValue 
+
+
+
+#----------------------------------------------------------------------#
+# CodeBuild Projects
+#----------------------------------------------------------------------#
+  CIAction: 
+    Condition: Setup
+    Type: AWS::CodeBuild::Project 
+    Properties: 
+      Name: !Join ['-', [!Ref 'RepositoryName', 'CIAction' ]]
+      Source: 
+        Type: CODEPIPELINE 
+        BuildSpec: 'buildspec/CIAction.yaml'
+      Environment: 
+        Type: LINUX_CONTAINER 
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        EnvironmentVariables:         
+          - Name: BranchName 
+            Value: !Ref BranchName 
+      Artifacts: 
+        Type: CODEPIPELINE 
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuildRole'
+      TimeoutInMinutes: 10 
+
+  CDActionDev: 
+    Condition: Setup
+    Type: AWS::CodeBuild::Project 
+    Properties: 
+      Name: !Join ['-', [!Ref 'RepositoryName', 'CDActionDev' ]]
+      Source: 
+        Type: CODEPIPELINE 
+        BuildSpec: 'buildspec/CDAction.yaml'
+      Environment: 
+        Type: LINUX_CONTAINER 
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        EnvironmentVariables:         
+          - Name: pipeline_environment 
+            Value: DEV 
+          - Name: BranchName 
+            Value: !Ref BranchName 
+      Artifacts: 
+        Type: CODEPIPELINE 
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuildRole'
+      TimeoutInMinutes: 10 
+
+  CDActionHomolog: 
+    Condition: Setup
+    Type: AWS::CodeBuild::Project 
+    Properties: 
+      Name: !Join ['-', [!Ref 'RepositoryName', 'CDActionHomolog']]
+      Source: 
+        Type: CODEPIPELINE 
+        BuildSpec: 'buildspec/CDAction.yaml'
+      Environment: 
+        Type: LINUX_CONTAINER 
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        EnvironmentVariables:         
+          - Name: pipeline_environment 
+            Value: HOMOLOG 
+          - Name: BranchName 
+            Value: !Ref BranchName 
+      Artifacts: 
+        Type: CODEPIPELINE 
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuildRole'
+      TimeoutInMinutes: 10 
+
+  CDActionProd: 
+    Condition: Setup
+    Type: AWS::CodeBuild::Project 
+    Properties: 
+      Name: !Join ['-', [!Ref 'RepositoryName', 'CDActionProd']]
+      Source: 
+        Type: CODEPIPELINE 
+        BuildSpec: 'buildspec/CDAction.yaml'
+      Environment: 
+        Type: LINUX_CONTAINER 
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        EnvironmentVariables:         
+          - Name: pipeline_environment 
+            Value: PROD 
+          - Name: BranchName 
+            Value: !Ref BranchName 
+      Artifacts: 
+        Type: CODEPIPELINE 
+      ServiceRole: !Sub 'arn:aws:iam::${AWS::AccountId}:role/CodeBuildRole'
+      TimeoutInMinutes: 10 

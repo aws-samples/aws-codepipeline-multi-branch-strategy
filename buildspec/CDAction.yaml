@@ -1,0 +1,13 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+        python: 3.7
+
+  build: 
+    commands: 
+      - echo "Running CD Stage..."
+      - echo $pipeline_environment 
+      - echo $BranchName
+

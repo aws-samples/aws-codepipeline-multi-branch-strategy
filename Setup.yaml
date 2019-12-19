@@ -1,0 +1,202 @@
+# Copyright 2019 Amazon.com, Inc. and its affiliates. All Rights Reserved.
+#
+# Licensed under the Amazon Software License (the 'License').
+# You may not use this file except in compliance with the License.
+# A copy of the License is located at
+#
+#   http://aws.amazon.com/asl/
+#
+# or in the 'license' file accompanying this file. This file is distributed
+# on an 'AS IS' BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+# express or implied. See the License for the specific language governing
+# permissions and limitations under the License.
+
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create Lambda Function"
+
+
+Resources:
+
+#----------------------------------------------------------------------#
+# EventRule to trigger LambdaPipeline lambda
+#----------------------------------------------------------------------#
+  CreatePipelineRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "EventRule"
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - 'CodeCommit Repository State Change'
+        detail:
+          event:
+              - referenceDeleted
+              - referenceCreated
+          referenceType:
+            - branch
+      State: ENABLED
+      Targets:
+      - Arn: !GetAtt CreatePipeline.Arn
+        Id: CreatePipeline
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CreatePipeline
+      Action: 'lambda:InvokeFunction'
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - CreatePipelineRule
+          - Arn
+
+
+#----------------------------------------------------------------------#
+# Role for lambda execution
+#----------------------------------------------------------------------#
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AWSCodePipelineFullAccess
+      Path: /
+
+
+#----------------------------------------------------------------------#
+# Role for Pipeline Execution
+#----------------------------------------------------------------------#
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CodePipelineRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodePipelineFullAccess
+        - arn:aws:iam::aws:policy/AWSCodeCommitFullAccess
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+
+
+
+#----------------------------------------------------------------------#
+# Role for CodeBuild Execution
+#----------------------------------------------------------------------#
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CodeBuildRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+
+
+#----------------------------------------------------------------------#
+# S3 Bucket to store template
+#----------------------------------------------------------------------#
+  TemplateBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${AWS::AccountId}-templates
+      VersioningConfiguration:
+        Status: Enabled
+
+  TemplateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TemplateBucket
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+                - s3:*
+            Effect: Allow
+            Resource:
+              - !Sub arn:aws:s3:::${TemplateBucket}
+              - !Sub arn:aws:s3:::${TemplateBucket}/*
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+
+
+
+#----------------------------------------------------------------------#
+# Lambda for Stack Creation
+#----------------------------------------------------------------------#
+  CreatePipeline:
+    DependsOn: LambdaRole
+    Type: "AWS::Lambda::Function"
+    Properties:
+      FunctionName: CreatePipeline
+      Handler: "index.lambda_handler"
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: "python3.6"
+      Timeout: 25
+      Code:
+        ZipFile: |
+          import boto3
+          def lambda_handler(event, context):
+              Region=event['region']
+              Account = event['account']
+              RepositoryName = event['detail']['repositoryName']
+              NewBranch = event['detail']['referenceName']
+              Event = event['detail']['event']
+              if NewBranch == "master":
+                quit()
+              if Event == "referenceCreated":
+                cf_client = boto3.client('cloudformation')
+                cf_client.create_stack(
+                    StackName= f'Pipeline-{RepositoryName}-{NewBranch}',
+                    TemplateURL= f'https://s3.amazonaws.com/{Account}-templates/TemplatePipeline.yaml',
+                    Parameters=[
+                        {
+                            'ParameterKey': 'RepositoryName',
+                            'ParameterValue': RepositoryName,
+                            'UsePreviousValue': False
+                        },
+                        {
+                            'ParameterKey': 'BranchName',
+                            'ParameterValue': NewBranch,
+                            'UsePreviousValue': False
+                        }
+                    ],
+                    OnFailure='ROLLBACK',
+                    Capabilities=['CAPABILITY_NAMED_IAM']
+                )
+              else:
+                cf_client = boto3.client('cloudformation')
+                cf_client.delete_stack(
+                    StackName= f'Pipeline-{RepositoryName}-{NewBranch}'
+                  )
