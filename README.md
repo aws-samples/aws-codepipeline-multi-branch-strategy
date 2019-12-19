@@ -1,10 +1,3 @@
-
-
-## License
-
-This library is licensed under the MIT-0 License. See the LICENSE file.
-
-
 # Multi-branch CodePipeline strategy with event-driven architecture
 
 *Henrique Bueno, DevOps Consultant, Professional Services*
@@ -302,3 +295,9 @@ The new code is integrated with the develop branch. If there's a conflict, it ne
 ## Conclusion
 
 This blog post discussed how you can work with event-driven strategy and Infrastructure as Code to implement a multi-branch pipeline flow using CodePipeline. It demonstrated how an Events rule and Lambda function can be used to fully orchestrate the creation and deletion of pipelines.
+
+
+
+## License
+
+This library is licensed under the MIT-0 License. See the LICENSE file.
