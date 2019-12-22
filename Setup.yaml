@@ -11,15 +11,13 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 
-
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Create Lambda Function"
-
 
 Resources:
 
 #----------------------------------------------------------------------#
-# EventRule to trigger LambdaPipeline lambda
+# EventRule to trigger CreatePipeline lambda
 #----------------------------------------------------------------------#
   CreatePipelineRule:
     Type: AWS::Events::Rule
