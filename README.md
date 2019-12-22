@@ -142,6 +142,7 @@ Before you start, make sure that the AWS CLI is installed and configured on your
 7. Create the first feature branch.
 8. Create the first Pull Request.
 9. Execute the Pull Request approval.
+10. Cleanup.
 
 
 ### 1. Clone the repository
@@ -171,7 +172,7 @@ These resources are created only once and they fit all the pipelines created in 
 
 `````
 # Command to create Setup stack
-aws cloudformation deploy --stack-name Setup \
+aws cloudformation deploy --stack-name Setup-Pipeline \
 --template-file Setup.yaml --region us-east-1 --capabilities CAPABILITY_NAMED_IAM
 `````
 
@@ -182,7 +183,7 @@ For the Lambda function to deploy a new pipeline stack, it needs to get the AWS 
 
 `````
 # Command that copy Template to S3 Bucket
-aws s3 cp TemplatePipeline.yaml s3://<ACCOUNT_ID>-templates/ --acl private
+aws s3 cp TemplatePipeline.yaml s3://"$(aws sts get-caller-identity --query Account --output text)"-templates/ --acl private
 `````
 
 
@@ -196,7 +197,7 @@ CodeCommit permits you to populate a repository at the moment of its creation as
 zip -r seed.zip buildspec
 
 # Command that copy seed.zip file to S3 Bucket.
-aws s3 cp seed.zip s3://<ACCOUNT_ID>-templates/ --acl private
+aws s3 cp seed.zip s3://"$(aws sts get-caller-identity --query Account --output text)"-templates/ --acl private
 `````
 
 
@@ -209,9 +210,10 @@ Now that the Setup stack is created and the seed file is stored in an Amazon S3 
 # CodeBuild Projects and the Pipeline for the master branch.
 # Note: Change "myapp" by the name you want.
 
-aws cloudformation deploy --stack-name myapp --template-file TemplatePipeline.yaml \
---parameter-overrides RepositoryName=myapp Setup=true \
---region us-east-1 --capabilities CAPABILITY_NAMED_IAM
+RepoName="myapp"
+aws cloudformation deploy --stack-name Repo-$RepoName --template-file TemplatePipeline.yaml \
+--parameter-overrides RepositoryName=$RepoName Setup=true \
+--region us-east-1 --capabilities CAPABILITY_NAMED_IAM
 `````
 
 When the stack is created, in addition to the CodeCommit repository, the CodeBuild projects and the master branch pipeline are also created. By default, a CodeCommit repository is created empty, with no branch. When the repository is populated with the seed.zip file, the master branch is created.
@@ -266,9 +268,9 @@ It’s possible to simulate the end of a feature development, when the branch is
 
 `````
 # Create the Pull Request
-aws codecommit create-pull-request --title "My Pull Request" \
---description "Please review these changes by Tuesday" \
---targets repositoryName=myapp,sourceReference=feature-abc,destinationReference=develop \
+aws codecommit create-pull-request --title "My Pull Request" \
+--description "Please review these changes by Tuesday" \
+--targets repositoryName=$RepoName,sourceReference=feature-abc,destinationReference=develop \
 --region us-east-1
 `````
 
@@ -280,15 +282,42 @@ To merge the feature branch to the develop branch, the Pull Request needs to be 
 `````
 # Accept the Pull Request
 # You can get the Pull-Request-ID in the json output of the create-pull-request command
-aws codecommit merge-pull-request-by-fast-forward --pull-request-id <PULL_REQUEST_ID_FROM_PREVIOUS_COMMAND> \
---repository-name myapp --region us-east-1
+aws codecommit merge-pull-request-by-fast-forward --pull-request-id <PULL_REQUEST_ID_FROM_PREVIOUS_COMMAND> \
+--repository-name $RepoName --region us-east-1
 
 # Delete the feature-branch
-aws codecommit delete-branch --repository-name myapp --branch-name feature-abc --region us-east-1
+aws codecommit delete-branch --repository-name $RepoName --branch-name feature-abc --region us-east-1
 `````
 
 The new code is integrated with the develop branch. If there's a conflict, it needs to be solved. After that, the featurebranch is deleted together with its pipeline. The Event Rule triggers the CreatePipeline Lambda function to delete the pipeline for its branch. Access the CodePipeline console to see that the pipeline for the feature branch is deleted.
 
+
+### 10. Cleanup
+
+To remove the resources created as part of this blog post, follow these steps:
+
+#### Delete Pipeline Stacks
+`````
+# Delete all the pipeline Stacks created by CreatePipeline Lambda
+Pipelines=$(aws cloudformation list-stacks --stack-status-filter --region us-east-1 --query 'StackSummaries[? StackStatus==`CREATE_COMPLETE` && starts_with(StackName, `Pipeline`) == `true`].[StackName]' --output text)
+while read -r Pipeline rest; do aws cloudformation delete-stack --stack-name $Pipeline --region us-east-1 ; done <<< $Pipelines
+`````
+
+#### Delete Repository Stacks
+`````
+# Delete all the Repository stacks Stacks created by Step 5.
+Repos=$(aws cloudformation list-stacks --stack-status-filter --region us-east-1 --query 'StackSummaries[? StackStatus==`CREATE_COMPLETE` && starts_with(StackName, `Repo-`) == `true`].[StackName]' --output text)
+while read -r Repo rest; do aws cloudformation delete-stack --stack-name $Repo --region us-east-1 ; done <<< $Repos
+`````
+
+#### Delete Setup-Pipeline Stack
+`````
+# Cleaning Bucket before Stack deletion 
+aws s3 rm s3://"$(aws sts get-caller-identity --query Account --output text)"-templates --recursive
+
+# Delete Setup Stack
+aws cloudformation delete-stack --stack-name Setup-Pipeline --region us-east-1 
+`````
 
 
 
