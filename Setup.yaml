@@ -130,8 +130,6 @@ Resources:
     Type: 'AWS::S3::Bucket'
     Properties:
       BucketName: !Sub ${AWS::AccountId}-templates
-      VersioningConfiguration:
-        Status: Enabled
 
   TemplateBucketPolicy:
     Type: AWS::S3::BucketPolicy
