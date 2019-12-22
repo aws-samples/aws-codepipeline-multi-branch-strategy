@@ -173,6 +173,8 @@ Resources:
               RepositoryName = event['detail']['repositoryName']
               NewBranch = event['detail']['referenceName']
               Event = event['detail']['event']
+              if NewBranch == "master":
+                 quit()
               if Event == "referenceCreated":
                 cf_client = boto3.client('cloudformation')
                 cf_client.create_stack(
