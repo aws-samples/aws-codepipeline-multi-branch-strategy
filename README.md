@@ -68,7 +68,7 @@ def lambda_handler(event, context):
     RepositoryName = event['detail']['repositoryName']
     NewBranch = event['detail']['referenceName']
     Event = event['detail']['event']
-    if NewBranch == "master":
+    if NewBranch == "main":
         quit()
     if Event == "referenceCreated":
         cf_client = boto3.client('cloudformation')
@@ -101,12 +101,12 @@ The logic for creating only the CI or the CI+CD is on the AWS CloudFormation tem
 
 `````
 Conditions: 
-    BranchMaster: !Equals [ !Ref BranchName, "master" ]
+    Branchmain: !Equals [ !Ref BranchName, "main" ]
     BranchDevelop: !Equals [ !Ref BranchName, "develop"]
     Setup: !Equals [ !Ref Setup, true ]
 `````
 
-* If the new branch is named master, then a stack will be created containing CI+CD pipelines, with deploy stages in the homologation and production environments.
+* If the new branch is named main, then a stack will be created containing CI+CD pipelines, with deploy stages in the homologation and production environments.
 * If the new branch is named develop, then a stack will be created containing CI+CD pipelines, with a deploy stage in the Dev environment.
 * If the new branch has any other name, then the stack will be created with only a CI pipeline.
 
@@ -121,8 +121,8 @@ This event-driven strategy permits pipelines to be created or deleted along with
 A GitFlow simulation could resemble that shown in the following diagram:
 
 
-1. First, a CodeCommit repository is created, along with the master branch and its respective pipeline (CI+CD).
-2. The developer creates a branch called develop based on the master branch. The pipeline (CI+CD at Dev) is automatically created.
+1. First, a CodeCommit repository is created, along with the main branch and its respective pipeline (CI+CD).
+2. The developer creates a branch called develop based on the main branch. The pipeline (CI+CD at Dev) is automatically created.
 The developer creates a feature-branch called feature-a based on the develop branch. The CI pipeline for this branch is automatically created.
 3. The developer creates a Pull Request from the feature-a branch to the develop branch. As soon as the Pull Request is accepted and merged and the feature-a branch is deleted, its pipeline is automatically deleted.
 4. The same process can be followed for the release branch and hotfix branch. Once the branch is created, a new pipeline is created for it which follows its branch lifecycle.
@@ -207,7 +207,7 @@ Now that the Setup stack is created and the seed file is stored in an Amazon S3 
 
 `````
 # Command to create the stack with the CodeCommit repository,
-# CodeBuild Projects and the Pipeline for the master branch.
+# CodeBuild Projects and the Pipeline for the main branch.
 # Note: Change "myapp" by the name you want.
 
 RepoName="myapp"
@@ -216,16 +216,16 @@ aws cloudformation deploy --stack-name Repo-$RepoName --template-file TemplatePi
 --region us-east-1 --capabilities CAPABILITY_NAMED_IAM
 `````
 
-When the stack is created, in addition to the CodeCommit repository, the CodeBuild projects and the master branch pipeline are also created. By default, a CodeCommit repository is created empty, with no branch. When the repository is populated with the seed.zip file, the master branch is created.
+When the stack is created, in addition to the CodeCommit repository, the CodeBuild projects and the main branch pipeline are also created. By default, a CodeCommit repository is created empty, with no branch. When the repository is populated with the seed.zip file, the main branch is created.
 
 
-Access the CodeCommit repository to see the seed files at the master branch. Access the CodePipeline console to see that there's a new pipeline with the name as the repository. This pipeline contains the CI+CD stages (homolog and prod).
+Access the CodeCommit repository to see the seed files at the main branch. Access the CodePipeline console to see that there's a new pipeline with the name as the repository. This pipeline contains the CI+CD stages (homolog and prod).
 
 
 
 ### 6. Create the develop branch
 
-To simulate a real development scenario, create a new branch called develop based on the master branch. In the GitFlow concept these two (master and develop) branches are fixed and never deleted.
+To simulate a real development scenario, create a new branch called develop based on the main branch. In the GitFlow concept these two (main and develop) branches are fixed and never deleted.
 
 When this new branch is created, the Events rule identifies that there's a change on this repository and triggers the CreatePipeline Lambda function to create a new pipeline for this branch. Access the CodePipeline console to see that there's a new pipeline with the name of the repository plus the branch name. This pipeline contains the CI+CD stages (Dev).
 
@@ -249,7 +249,7 @@ git push origin develop
 
 ### 7. Create the first feature branch
 
-Now that there are two main and fixed branches (master and develop), you can create a feature branch. In the GitFlow concept, feature branches have a short lifetime and are frequently merged to the develop branch. This type of branch only exists during the development period. When the feature development is finished, it is merged to the develop branch and the feature branch is deleted.
+Now that there are two main and fixed branches (main and develop), you can create a feature branch. In the GitFlow concept, feature branches have a short lifetime and are frequently merged to the develop branch. This type of branch only exists during the development period. When the feature development is finished, it is merged to the develop branch and the feature branch is deleted.
 
 `````
 # Create the feature-branch branch
