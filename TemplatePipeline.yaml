@@ -21,14 +21,14 @@ Parameters:
     Type:  String
   BranchName:
     Type:  String
-    Default: "master"
+    Default: "main"
   Setup:
     Type: String
     Default: false
 
 
 Conditions: 
-  BranchMaster: !Equals [ !Ref BranchName, "master" ]
+  BranchMain: !Equals [ !Ref BranchName, "main" ]
   BranchDevelop: !Equals [ !Ref BranchName, "develop"]
   Setup: !Equals [ !Ref Setup, true ]
 
@@ -126,10 +126,10 @@ Resources:
 
 
 #----------------------------------------------------------------------#
-# If BranchName=Master, then create the CD Stage to deploy to Homolog
+# If BranchName=Main, then create the CD Stage to deploy to Homolog
 #----------------------------------------------------------------------#
         - !If 
-          - BranchMaster
+          - BranchMain
           - Name: Deploy-Homolog  
             Actions: 
             - Name: CDActionHomolog
@@ -150,10 +150,10 @@ Resources:
 
 
 #----------------------------------------------------------------------#
-# If BranchName=Master, then create CD Stage to deploy to Prod
+# If BranchName=Main, then create CD Stage to deploy to Prod
 #----------------------------------------------------------------------#
         - !If 
-          - BranchMaster
+          - BranchMain
           - Name: Deploy-Prod  
             Actions: 
             - Name: CDActionProd

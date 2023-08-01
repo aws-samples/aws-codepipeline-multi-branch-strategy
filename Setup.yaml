@@ -69,9 +69,11 @@ Resources:
             Action:
               - sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+        - arn:aws:iam::aws:policy/AWSLambda_FullAccess
         - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
-        - arn:aws:iam::aws:policy/AWSCodePipelineFullAccess
+        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
       Path: /
 
 
@@ -83,7 +85,7 @@ Resources:
     Properties:
       RoleName: CodePipelineRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSCodePipelineFullAccess
+        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
         - arn:aws:iam::aws:policy/AWSCodeCommitFullAccess
         - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
@@ -158,7 +160,7 @@ Resources:
       FunctionName: CreatePipeline
       Handler: "index.lambda_handler"
       Role: !GetAtt LambdaRole.Arn
-      Runtime: "python3.6"
+      Runtime: "python3.9"
       Timeout: 25
       Code:
         ZipFile: |
@@ -169,7 +171,7 @@ Resources:
               RepositoryName = event['detail']['repositoryName']
               NewBranch = event['detail']['referenceName']
               Event = event['detail']['event']
-              if NewBranch == "master":
+              if NewBranch == "main":
                  quit()
               if Event == "referenceCreated":
                 cf_client = boto3.client('cloudformation')
